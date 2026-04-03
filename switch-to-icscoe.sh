@@ -301,10 +301,60 @@ main() {
 
   if [[ "$DO_APT_UPDATE" -eq 1 ]]; then
     log "Running: apt update"
-    apt update
+    if apt update; then
+      cleanup_backups
+    else
+      warn "apt update が失敗しました。バックアップファイルを保持します。"
+      warn "手動で復元する場合: cp file${BACKUP_SUFFIX} file"
+    fi
   else
     log "--no-apt-update のため apt update はスキップしました"
   fi
+}
+
+cleanup_backups() {
+  local bak_files=()
+  shopt -s nullglob
+  for f in /etc/apt/sources.list.bak.* /etc/apt/sources.list.d/*.bak.*; do
+    bak_files+=("$f")
+  done
+  shopt -u nullglob
+
+  if [[ "${#bak_files[@]}" -eq 0 ]]; then
+    return
+  fi
+
+  echo
+  log "apt update が正常に完了しました。以下のバックアップファイルがあります:"
+  for f in "${bak_files[@]}"; do
+    echo "  $f"
+  done
+
+  echo
+  echo "  r) restore - バックアップから復元して変更を元に戻す"
+  echo "  d) delete  - バックアップを削除する"
+  echo "  k) keep    - バックアップをそのまま保持する"
+  read -r -p "バックアップファイルをどうしますか? [r/d/k]: " answer
+  case "$answer" in
+    r|R)
+      for f in "${bak_files[@]}"; do
+        local orig="${f%.bak.*}"
+        cp -a "$f" "$orig"
+        rm -f "$f"
+        log "Restored: $orig"
+      done
+      log "復元しました。apt update を再実行してください。"
+      ;;
+    d|D)
+      for f in "${bak_files[@]}"; do
+        rm -f "$f"
+        log "Deleted: $f"
+      done
+      ;;
+    *)
+      log "バックアップファイルを保持します"
+      ;;
+  esac
 }
 
 main "$@"
